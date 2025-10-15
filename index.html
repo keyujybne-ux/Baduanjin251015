@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Teachable Machine 影像分類 Demo (響應式優化)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
+    <style>
+        /* 1. 全局樣式和字體 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5; 
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding-top: 30px;
+        }
+
+        /* 2. 主容器佈局 (Grid - 桌面版) */
+        #app-container {
+            width: 90%;
+            max-width: 1200px;
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+            display: grid;
+            gap: 20px;
+            grid-template-columns: 2fr 1fr; 
+            grid-template-areas:
+                "header header"
+                "control control"
+                "webcam result"; /* 桌面：兩欄佈局 */
+        }
+
+        h1 {
+            grid-area: header;
+            color: #1f3a5f; 
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+            font-size: 2em;
+            text-align: center;
+        }
+        
+        /* 3. 控制區 */
+        .control-panel {
+            grid-area: control;
+            display: flex;
+            gap: 20px;
+        }
+
+        .control-box {
+            background-color: #f7f9fb;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            flex: 1; 
+        }
+        
+        .control-box h2 {
+            color: #007bff;
+            font-size: 1.2em;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        
+        .control-box p {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        /* 4. 按鈕樣式 */
+        button {
+            background-color: #28a745; 
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background-color 0.3s, transform 0.1s;
+            margin-right: 10px;
+            width: auto;
+            margin-bottom: 10px; 
+        }
+        
+        button#switchButton {
+            background-color: #ffc107; 
+            color: #333;
+            margin-right: 0;
+        }
+        button#switchButton:hover:not(:disabled) {
+            background-color: #e0a800;
+        }
+
+
+        button#stopButton {
+            background-color: #dc3545; 
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #1e7e34;
+            transform: translateY(-1px);
+        }
+        
+        button:disabled {
+            background-color: #adb5bd;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 5. 影像顯示區 */
+        #webcam-container {
+            grid-area: webcam;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex; 
+            justify-content: center;
+            align-items: center;
+            min-height: 250px; 
+            background-color: #000; 
+        }
+        
+        #webcam-container canvas {
+            max-width: 100%;
+            height: auto;
+            display: block; 
+        }
+
+        /* 6. 辨識結果區 */
+        #result-wrapper {
+            grid-area: result;
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        #result-wrapper h2 {
+            font-size: 1.2em;
+            color: #1f3a5f;
+            margin-top: 0;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #e9ecef;
+            padding-bottom: 5px;
+        }
+        
+        #label-container {
+            padding: 10px 0;
+            font-size: 1.1em;
+        }
+
+        /* 單個分類項目 */
+        .class-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px; 
+            margin-bottom: 5px;
+            border-radius: 4px;
+            background-color: #fcfcfc; 
+            transition: all 0.2s ease;
+        }
+        
+        /* === 區別 Top-1 的樣式 (藍色強調) === */
+        .class-item.top-1 {
+            background-color: #e6f7ff; 
+            border: 2px solid #007bff; 
+            box-shadow: 0 2px 5px rgba(0, 123, 255, 0.2);
+            font-weight: bold;
+            transform: scale(1.02); 
+        }
+        
+        .class-item.top-1 .class-name {
+            color: #0056b3; 
+        }
+
+        /* 進度條樣式 */
+        .progress-bar-container {
+            flex-grow: 1; 
+            height: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            margin: 0 10px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background-color: #4CAF50; /* 預設綠色 */
+            border-radius: 4px;
+            transition: width 0.3s ease-out;
+        }
+        
+        .class-item.top-1 .progress-bar {
+            background-color: #007bff; /* Top-1 藍色 */
+        }
+        
+        .class-probability {
+            font-weight: bold;
+            color: #666;
+            width: 55px; 
+            text-align: right;
+            font-size: 0.9em;
+        }
+        
+        .class-item.top-1 .class-probability {
+            color: #007bff; 
+        }
+
+
+        /* ========================================= */
+        /* 7. 響應式設計 (Media Queries) */
+        @media (max-width: 768px) {
+            
+            body {
+                padding-top: 15px;
+            }
+            
+            #app-container {
+                width: 95%; 
+                padding: 15px;
+                grid-template-columns: 1fr; 
+                /* 手機版：確保結果區塊在攝影機下方 */
+                grid-template-areas:
+                    "header"
+                    "control"
+                    "webcam"
+                    "result"; 
+                gap: 15px;
+            }
+
+            .control-panel {
+                flex-direction: column; 
+                gap: 15px;
+            }
+            
+            button {
+                width: 100%; /* 手機上按鈕佔滿寬度 */
+                margin: 5px 0;
+                padding: 12px;
+                font-size: 18px; 
+            }
+
+            h1 {
+                font-size: 1.5em; 
+            }
+            
+            #webcam-container {
+                min-height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <h1>Teachable Machine 影像分類 Demo (響應式優化)</h1>
+
+    <div class="control-panel">
+        <div class="control-box">
+            <h2>步驟 1 | 模型控制</h2>
+            <p>模型資料夾位置：<code>./my_model/</code></p>
+            <button type="button" onclick="init()" id="startButton">載入並啟動攝影機</button>
+            <button type="button" onclick="stopWebcam()" id="stopButton" disabled>關閉攝影機</button>
+            <div id="load-status">模型尚未載入</div>
+        </div>
+        
+        <div class="control-box">
+            <h2>步驟 2 | 攝影機控制</h2>
+            <p>即時切換前後鏡頭，適用於手機。</p>
+            <button type="button" onclick="switchCamera()" id="switchButton" disabled>切換鏡頭 (當前: 前置)</button>
+        </div>
+    </div>
+    
+    <div id="webcam-container">
+        </div>
+    
+    <div id="result-wrapper"> 
+        <h2>即時辨識結果</h2>
+        <div id="top-result"></div>
+        <div id="label-container">
+            </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+<script type="text/javascript">
+    const URL = "./my_model/"; // 保持原有的模型路徑
+
+    let model, webcam, labelContainer, maxPredictions, isRunning = false;
+    let currentFacingMode = 'user'; // 預設前置鏡頭 ('user')
+    let animationFrameId;
+
+    // DOM 元素引用
+    const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    const switchButton = document.getElementById('switchButton');
+    const loadStatus = document.getElementById('load-status');
+    const webcamContainer = document.getElementById("webcam-container");
+    // const topResultDiv = document.getElementById('top-result'); // 不需要，Top-1 在列表中區分
+
+    // --- 攝影機控制函數 ---
+
+    // 啟動/重啟攝影機，根據當前的 currentFacingMode
+    async function setupWebcam(facingMode) {
+        if (webcam && webcam.stream) {
+            webcam.stop();
+        }
+        
+        const flip = (facingMode === 'user'); 
+        // 為了響應式設計，讓 TM 創建的 canvas 尺寸固定，由 CSS 控制最大寬度
+        const constraints = {
+            width: 300, 
+            height: 300, 
+            flip: flip,
+            facingMode: facingMode 
+        };
+
+        webcam = new tmImage.Webcam(constraints.width, constraints.height, constraints.flip);
+        await webcam.setup({ facingMode: constraints.facingMode }); 
+        await webcam.play();
+        
+        webcamContainer.innerHTML = '';
+        webcamContainer.appendChild(webcam.canvas);
+        
+        currentFacingMode = facingMode;
+        switchButton.innerText = `切換鏡頭 (當前: ${facingMode === 'user' ? '前置' : '後置'})`;
+        
+        if (model && !isRunning) {
+            isRunning = true;
+            loop();
+        }
+    }
+
+    // 停止攝影機
+    function stopWebcam() {
+        if (webcam) {
+            webcam.stop();
+            isRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            
+            webcamContainer.innerHTML = '<p style="color:white; padding: 20px;">攝影機已關閉</p>';
+
+            stopButton.disabled = true;
+            switchButton.disabled = true;
+            startButton.disabled = false;
+            startButton.innerText = '重新啟動攝影機';
+            loadStatus.innerHTML = '✅ 模型已載入，攝影機已停止';
+        }
+    }
+
+    // 切換鏡頭的核心邏輯
+    async function switchCamera() {
+        if (!model || !isRunning) return; 
+
+        switchButton.disabled = true;
+        switchButton.innerText = '切換中...';
+        loadStatus.innerHTML = '正在切換鏡頭...';
+        
+        const newFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+
+        try {
+            await setupWebcam(newFacingMode);
+            loadStatus.innerHTML = '✅ 鏡頭切換成功';
+        } catch (error) {
+            console.error("切換鏡頭失敗:", error);
+            loadStatus.innerHTML = '❌ 切換鏡頭失敗 (設備可能無此鏡頭)';
+        } finally {
+            switchButton.disabled = false;
+        }
+    }
+
+    // --- 初始化和主要 Loop (基於原始檔案的 init/loop) ---
+
+    async function init() {
+        startButton.disabled = true;
+        startButton.innerText = '載入中...';
+        loadStatus.innerHTML = '正在載入模型和攝影機...';
+        
+        try {
+            // 1. 載入模型
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
+            
+            // 2. 設置初始攝影機 (使用新的 setupWebcam 函數)
+            await setupWebcam(currentFacingMode); 
+            
+            // 3. 創建結果列表 DOM (帶有進度條和 ID)
+            labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = ''; 
+            const classNames = model.getClassLabels();
+            for (let i = 0; i < maxPredictions; i++) {
+                const item = document.createElement('div');
+                item.className = 'class-item';
+                item.id = `item-${i}`; 
+
+                const name = document.createElement('span');
+                name.className = 'class-name';
+                name.innerText = classNames[i];
+                
+                const barContainer = document.createElement('div');
+                barContainer.className = 'progress-bar-container';
+                const bar = document.createElement('div');
+                bar.className = 'progress-bar';
+                bar.id = `bar-${i}`; 
+                barContainer.appendChild(bar);
+                
+                const probability = document.createElement('span');
+                probability.className = 'class-probability';
+                probability.id = `prob-${i}`; 
+                
+                item.appendChild(name);
+                item.appendChild(barContainer);
+                item.appendChild(probability);
+                labelContainer.appendChild(item);
+            }
+            
+            // 4. 更新狀態
+            startButton.innerText = '模型已載入';
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            switchButton.disabled = false; 
+            loadStatus.innerHTML = '✅ 模型載入完成，攝影機運作中';
+            switchButton.innerText = `切換鏡頭 (當前: 前置)`;
+
+        } catch (error) {
+            console.error("載入失敗:", error);
+            loadStatus.innerHTML = '❌ 載入失敗 (請檢查console)';
+            startButton.innerText = '啟動模型 (重試)';
+            startButton.disabled = false;
+            stopButton.disabled
