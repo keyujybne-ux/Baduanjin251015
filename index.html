@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Teachable Machine 影像分類 Demo (響應式優化)</title>
+    <title>Teachable Machine 影像分類 Demo (最終優化版)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
     <style>
         /* 1. 全局樣式和字體 */
@@ -32,7 +32,7 @@
             grid-template-areas:
                 "header header"
                 "control control"
-                "webcam result"; /* 桌面：兩欄佈局 */
+                "webcam result"; 
         }
 
         h1 {
@@ -191,13 +191,13 @@
 
         .progress-bar {
             height: 100%;
-            background-color: #4CAF50; /* 預設綠色 */
+            background-color: #4CAF50; 
             border-radius: 4px;
             transition: width 0.3s ease-out;
         }
         
         .class-item.top-1 .progress-bar {
-            background-color: #007bff; /* Top-1 藍色 */
+            background-color: #007bff; 
         }
         
         .class-probability {
@@ -240,7 +240,7 @@
             }
             
             button {
-                width: 100%; /* 手機上按鈕佔滿寬度 */
+                width: 100%; 
                 margin: 5px 0;
                 padding: 12px;
                 font-size: 18px; 
@@ -259,13 +259,13 @@
 <body>
 
 <div id="app-container">
-    <h1>Teachable Machine 影像分類 Demo (響應式優化)</h1>
+    <h1>Teachable Machine 影像分類 Demo (最終優化版)</h1>
 
     <div class="control-panel">
         <div class="control-box">
             <h2>步驟 1 | 模型控制</h2>
             <p>模型資料夾位置：<code>./my_model/</code></p>
-            <button type="button" onclick="init()" id="startButton">載入並啟動攝影機</button>
+            <button type="button" id="startButton">載入並啟動攝影機</button>
             <button type="button" onclick="stopWebcam()" id="stopButton" disabled>關閉攝影機</button>
             <div id="load-status">模型尚未載入</div>
         </div>
@@ -282,7 +282,7 @@
     
     <div id="result-wrapper"> 
         <h2>即時辨識結果</h2>
-        <div id="top-result"></div>
+        <div id="top-result" style="display: none;"></div> 
         <div id="label-container">
             </div>
     </div>
@@ -303,8 +303,7 @@
     const switchButton = document.getElementById('switchButton');
     const loadStatus = document.getElementById('load-status');
     const webcamContainer = document.getElementById("webcam-container");
-    // const topResultDiv = document.getElementById('top-result'); // 不需要，Top-1 在列表中區分
-
+    
     // --- 攝影機控制函數 ---
 
     // 啟動/重啟攝影機，根據當前的 currentFacingMode
@@ -314,7 +313,6 @@
         }
         
         const flip = (facingMode === 'user'); 
-        // 為了響應式設計，讓 TM 創建的 canvas 尺寸固定，由 CSS 控制最大寬度
         const constraints = {
             width: 300, 
             height: 300, 
@@ -323,6 +321,7 @@
         };
 
         webcam = new tmImage.Webcam(constraints.width, constraints.height, constraints.flip);
+        // 使用 try-catch 處理 setup 錯誤，尤其是鏡頭權限或找不到鏡頭
         await webcam.setup({ facingMode: constraints.facingMode }); 
         await webcam.play();
         
@@ -334,7 +333,8 @@
         
         if (model && !isRunning) {
             isRunning = true;
-            loop();
+            // 首次啟動 loop，之後會在 loop 內自己調用
+            window.requestAnimationFrame(loop); 
         }
     }
 
@@ -376,9 +376,20 @@
         }
     }
 
-    // --- 初始化和主要 Loop (基於原始檔案的 init/loop) ---
+    // --- 初始化和主要 Loop ---
 
     async function init() {
+        // 檢查模型是否已經載入 (避免重複載入模型)
+        if (model) {
+            // 如果模型已經載入，直接重新啟動攝影機即可
+            await setupWebcam(currentFacingMode);
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            switchButton.disabled = false;
+            loadStatus.innerHTML = '✅ 模型已載入，攝影機運作中';
+            return;
+        }
+        
         startButton.disabled = true;
         startButton.innerText = '載入中...';
         loadStatus.innerHTML = '正在載入模型和攝影機...';
@@ -390,10 +401,10 @@
             model = await tmImage.load(modelURL, metadataURL);
             maxPredictions = model.getTotalClasses();
             
-            // 2. 設置初始攝影機 (使用新的 setupWebcam 函數)
+            // 2. 設置初始攝影機
             await setupWebcam(currentFacingMode); 
             
-            // 3. 創建結果列表 DOM (帶有進度條和 ID)
+            // 3. 創建結果列表 DOM 
             labelContainer = document.getElementById("label-container");
             labelContainer.innerHTML = ''; 
             const classNames = model.getClassLabels();
@@ -436,4 +447,62 @@
             loadStatus.innerHTML = '❌ 載入失敗 (請檢查console)';
             startButton.innerText = '啟動模型 (重試)';
             startButton.disabled = false;
-            stopButton.disabled
+            stopButton.disabled = true;
+            switchButton.disabled = true;
+        }
+    }
+
+    function loop() {
+        if (!isRunning) return;
+        webcam.update(); 
+        predict();
+        animationFrameId = window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+        const prediction = await model.predict(webcam.canvas);
+        
+        let topPredictionIndex = -1;
+        let maxProb = -1;
+        
+        // 1. 尋找 Top-1
+        for (let i = 0; i < maxPredictions; i++) {
+            if (prediction[i].probability > maxProb) {
+                maxProb = prediction[i].probability;
+                topPredictionIndex = i;
+            }
+        }
+        
+        // 2. 更新數據和 Top-1 樣式
+        for (let i = 0; i < maxPredictions; i++) {
+            const prob = prediction[i].probability;
+            const probPercent = (prob * 100).toFixed(2);
+            
+            const item = document.getElementById(`item-${i}`);
+            const bar = document.getElementById(`bar-${i}`);
+            const probSpan = document.getElementById(`prob-${i}`);
+
+            if(bar) bar.style.width = `${prob * 100}%`;
+            if(probSpan) probSpan.innerText = `${probPercent}%`;
+            
+            if (item) {
+                if (i === topPredictionIndex) {
+                    item.classList.add('top-1');
+                } else {
+                    item.classList.remove('top-1');
+                }
+            }
+        }
+    }
+    
+    // === 核心修復：使用 DOMContentLoaded 綁定事件 ===
+    document.addEventListener('DOMContentLoaded', (event) => {
+        // 確保 startButton 元素存在後，綁定 init 函數
+        if (startButton) {
+            startButton.addEventListener('click', init);
+        }
+    });
+</script>
+
+</body>
+</html>
